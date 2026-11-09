@@ -60,15 +60,14 @@
         this.nextProp = 2 + Math.floor(r() * 5);
         const side = r() < 0.5 ? -1 : 1;
         const roll = r();
-        const kind = roll < 0.5 ? 'oak' : roll < 0.72 ? 'poplar' : 'bush';
+        const kind = roll < 0.5 ? 'oak' : roll < 0.72 ? 'pine' : 'bush';
         const spec = SW.PROPS[kind];
         const near = kind === 'bush' ? 6.5 : 8.5;
         seg.prop = {
           kind,
           x: side * (near + r() * (kind === 'bush' ? 10 : 34)),
           h: spec.h[0] + r() * (spec.h[1] - spec.h[0]),
-          v: Math.floor(r() * 3),
-          flip: r() < 0.5 ? 1 : 0
+          v: Math.floor(r() * 3)
         };
       }
       this.segs.push(seg);

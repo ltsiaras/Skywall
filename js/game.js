@@ -50,7 +50,6 @@
   // ---------- set-up ----------
   const canvas = $('#scene');
   const renderer = new SW.Renderer(canvas);
-  renderer.load('plate', 'assets/images/sky/sky-cloud-sea.webp');
 
   const input = new SW.Input($('#touch'));
   let store = SW.store.load();
@@ -174,7 +173,9 @@
     run.driven += dt;
     if (world.onRoad) run.onRoad += dt;
 
-    clockFill.style.transform = `scaleX(${Math.min(1, run.t / run.end)})`;
+    const left = Math.max(0, Math.ceil(run.end - run.t));
+    const clock = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    if (clock !== run.clock) { run.clock = clock; clockEl.textContent = clock; }
     if (run.t >= run.end) finish();
   }
 
@@ -202,23 +203,14 @@
 
   // ---------- screens ----------
   const screens = { menu: $('#menu'), brief: $('#brief'), pause: $('#pause'), results: $('#results'), fact: $('#fact') };
-  const hud = $('#hud'), touch = $('#touch'), clockFill = $('.clock-fill');
+  const hud = $('#hud'), touch = $('#touch'), clockEl = $('[data-clock]');
 
   function setState(next) {
     state = next;
     const screenFor = { menu: 'menu', brief: 'brief', paused: 'pause', results: 'results', fact: 'fact' };
     const show = screenFor[next];
     for (const [name, el] of Object.entries(screens)) {
-      const on = name === show;
-      if (on && el.hidden) {
-        el.hidden = false;
-        el.animate(reduced
-          ? [{ opacity: 0 }, { opacity: 1 }]
-          : [{ opacity: 0, transform: 'translateY(14px)' }, { opacity: 1, transform: 'none' }],
-          { duration: reduced ? 150 : 380, easing: 'cubic-bezier(.2,.7,.2,1)' });
-      } else if (!on) {
-        el.hidden = true;
-      }
+      el.hidden = name !== show;
     }
     const playing = next === 'play';
     input.captureKeys = playing;
@@ -300,42 +292,32 @@
     const stop = Math.min(P.stops - 1, Math.floor(store.runs / P.runsPerStop));
     const done = store.runs >= P.stops * P.runsPerStop;
     const inStop = done ? P.runsPerStop : store.runs - stop * P.runsPerStop;
-    const ol = $('.stops');
-    ol.innerHTML = '';
-    for (let i = 0; i < P.stops; i++) {
-      const li = document.createElement('li');
-      li.className = i < stop || done ? 'done' : i === stop ? 'here' : '';
-      ol.appendChild(li);
-    }
     $('[data-journey]').textContent = done
-      ? 'All 12 stops done, the study’s full course. Keep driving.'
-      : `Stop ${stop + 1} of ${P.stops} · ${inStop} of ${P.runsPerStop} runs`;
+      ? 'All 12 sessions done (the full study). Keep going!'
+      : `Session ${stop + 1} of ${P.stops}, run ${inStop} of ${P.runsPerStop}`;
 
-    $$('.car').forEach(b => b.setAttribute('aria-checked', String(b.dataset.car === store.car)));
+    $$('.cars input').forEach(r => { r.checked = r.value === store.car; });
   }
 
   function buildCars() {
     const wrap = $('.cars');
     for (const design of SW.CARS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'car';
-      b.dataset.car = design.id;
-      b.setAttribute('role', 'radio');
+      const label = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'car';
+      radio.value = design.id;
       const cv = document.createElement('canvas');
-      cv.width = 168; cv.height = 112;
+      cv.width = 96; cv.height = 64;
       cv.setAttribute('aria-hidden', 'true');
-      const ctx = cv.getContext('2d');
-      SW.drawCar(ctx, design, cv.width / 2, cv.height * 0.86, cv.width * 0.66, { shadow: false });
-      const label = document.createElement('span');
-      label.textContent = design.name;
-      b.append(cv, label);
-      b.addEventListener('click', () => {
+      SW.drawCar(cv.getContext('2d'), design, cv.width / 2, cv.height * 0.88, cv.width * 0.66, { shadow: false });
+      radio.addEventListener('change', () => {
         store.car = design.id;
         SW.store.save(store);
         paintMenu();
       });
-      wrap.appendChild(b);
+      label.append(radio, cv, document.createTextNode(design.name));
+      wrap.appendChild(label);
     }
   }
 
@@ -436,7 +418,6 @@
 
   // ---------- the loop ----------
   let last = performance.now();
-  let slow = 0;
 
   function frame(now) {
     const raw = Math.max(0, (now - last) / 1000);
@@ -464,10 +445,6 @@
       showCross: state !== 'menu',
       reduced
     });
-
-    // Hold 60 fps: if frames keep running long, draw at a lower resolution.
-    if (raw > 0.021 && raw < 0.1) slow++; else slow = Math.max(0, slow - 1);
-    if (slow > 45 && renderer.dpr > 1) { renderer.setDpr(Math.max(1, renderer.dpr - 0.25)); slow = 0; }
 
     requestAnimationFrame(frame);
   }

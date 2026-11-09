@@ -1,134 +1,104 @@
-/* Skywall · scenery.js
-   The daytime countryside the road runs through: the scene's own palette,
-   two bands of far hills, and roadside trees and bushes drawn once into
-   offscreen canvases. The site's four colours stay on the UI, the car and
-   the cross; the land gets these. */
+/* scenery.js - sky, hills, trees. All flat colours and canvas primitives. */
 (function (SW) {
   'use strict';
 
   SW.SCENE = {
-    grass: ['#5DAA5E', '#55A157'],
-    shoulder: ['#DCD3BC', '#CFC5AB'],   // pale gravel verge
-    road: ['#636B75', '#5E666F'],
-    line: '#F6F4EE',                    // painted edge lines
-    haze: '#A7CBAE',                    // aerial haze: far fields, fog
-    hillFar: '#A6CBBB',
-    hillNear: '#7FB687',
-    leaf: ['#3F8B48', '#367F40', '#4C9752'],
-    leafHi: '#7CBF74',
-    leafLo: '#245C30',
-    trunk: '#6E5640'
+    skyTop: '#2F80D8',
+    skyLow: '#B4DCF7',
+    cloud: '#FFFFFF',
+    hills: '#3C8C40',
+    grass: ['#5BB548', '#52A840'],
+    rumble: ['#FFFFFF', '#3A3A3A'],
+    road: ['#7A7A7A', '#737373'],
+    trunk: '#7A5230',
+    leaf: ['#2E8B2E', '#267A26', '#3A9A34'],
+    outline: '#000000'
   };
-  const S = SW.SCENE;
+  var S = SW.SCENE;
 
-  /* Prop kinds. h is the height range in metres; aspect is width / height. */
+  // tree sizes in metres (h = height range)
   SW.PROPS = {
-    oak:    { h: [5.5, 9],  aspect: 0.9 },
-    poplar: { h: [8, 12],   aspect: 0.42 },
-    bush:   { h: [1.4, 2.4], aspect: 1.7 }
+    oak:  { h: [5, 8] },
+    pine: { h: [7, 11] },
+    bush: { h: [1.2, 2.2] }
   };
 
-  function blobs(ctx, list) {
-    ctx.beginPath();
-    for (const [x, y, r] of list) { ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); }
-  }
+  // a few clouds, positions in "sky units" (x in screen heights, y 0..1 above horizon)
+  var CLOUDS = [
+    [0.1, 0.55, 1.0], [0.9, 0.75, 0.7], [1.6, 0.45, 1.2], [2.4, 0.7, 0.8], [3.1, 0.5, 1.0]
+  ];
+  var SPAN = 3.6;
 
-  // A flat canopy with a lit top-left, a shaded underside and a soft ground shadow.
-  function canopy(ctx, W, H, list, leaf, groundY, groundW) {
-    ctx.fillStyle = S.leafLo;
-    ctx.globalAlpha = 0.28;
-    ctx.beginPath(); ctx.ellipse(W / 2, groundY, groundW, H * 0.025, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = leaf;
-    blobs(ctx, list); ctx.fill();
-    ctx.save();
-    blobs(ctx, list); ctx.clip();
-    const top = Math.min(...list.map(b => b[1] - b[2]));
-    const bottom = Math.max(...list.map(b => b[1] + b[2]));
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = S.leafHi;
-    blobs(ctx, list.map(([x, y, r]) => [x - r * 0.28, y - r * 0.32, r * 0.62])); ctx.fill();
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = S.leafLo;
-    ctx.fillRect(0, top + (bottom - top) * 0.72, W, H);
-    ctx.restore();
-    ctx.globalAlpha = 1;
-  }
+  SW.drawSky = function (ctx, L, scroll) {
+    var g = ctx.createLinearGradient(0, 0, 0, L.horizon);
+    g.addColorStop(0, S.skyTop);
+    g.addColorStop(1, S.skyLow);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, L.W, L.H);
 
-  function trunk(ctx, x, y0, y1, w) {
-    ctx.fillStyle = S.trunk;
-    ctx.beginPath();
-    ctx.moveTo(x - w * 0.6, y1); ctx.lineTo(x - w * 0.4, y0); ctx.lineTo(x + w * 0.4, y0); ctx.lineTo(x + w * 0.6, y1);
-    ctx.closePath(); ctx.fill();
-  }
-
-  const DRAWERS = {
-    oak(ctx, W, H, leaf) {
-      const g = H * 0.97;
-      trunk(ctx, W / 2, H * 0.5, g, W * 0.1);
-      canopy(ctx, W, H, [
-        [W * 0.5, H * 0.34, W * 0.3], [W * 0.27, H * 0.46, W * 0.22], [W * 0.73, H * 0.46, W * 0.22],
-        [W * 0.4, H * 0.2, W * 0.2], [W * 0.62, H * 0.22, W * 0.19], [W * 0.5, H * 0.55, W * 0.2]
-      ], leaf, g, W * 0.36);
-    },
-    poplar(ctx, W, H, leaf) {
-      const g = H * 0.98;
-      trunk(ctx, W / 2, H * 0.7, g, W * 0.12);
-      const list = [];
-      for (let i = 0; i < 7; i++) {
-        const t = i / 6, r = W * (0.2 + 0.24 * Math.sin(Math.PI * (0.15 + 0.75 * t)));
-        list.push([W * (0.5 + (i % 2 ? 0.05 : -0.05)), H * (0.1 + t * 0.66), r]);
-      }
-      canopy(ctx, W, H, list, leaf, g, W * 0.42);
-    },
-    bush(ctx, W, H, leaf) {
-      const g = H * 0.94;
-      canopy(ctx, W, H, [
-        [W * 0.3, H * 0.62, H * 0.3], [W * 0.52, H * 0.46, H * 0.4], [W * 0.73, H * 0.6, H * 0.32],
-        [W * 0.42, H * 0.7, H * 0.24], [W * 0.62, H * 0.72, H * 0.22]
-      ], leaf, g, W * 0.44);
+    ctx.fillStyle = S.cloud;
+    for (var i = 0; i < CLOUDS.length; i++) {
+      var c = CLOUDS[i];
+      var u = ((c[0] - scroll * 0.3) % SPAN + SPAN) % SPAN;   // wrap around
+      var x = (u - 0.4) * L.H;
+      var y = L.horizon - c[1] * L.horizon * 0.8;
+      var s = c[2] * L.H * 0.05;
+      ctx.beginPath();
+      ctx.ellipse(x, y, s * 1.6, s * 0.7, 0, 0, Math.PI * 2);
+      ctx.ellipse(x - s * 1.1, y + s * 0.2, s, s * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + s * 1.2, y + s * 0.25, s * 1.1, s * 0.5, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + s * 0.2, y - s * 0.45, s * 0.9, s * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
   };
 
-  /* sprites[kind][variant][flip] → canvas */
-  SW.buildSprites = function () {
-    const out = {};
-    for (const kind of Object.keys(DRAWERS)) {
-      const H = 256, W = Math.round(H * SW.PROPS[kind].aspect);
-      out[kind] = S.leaf.map(leaf => {
-        const a = document.createElement('canvas');
-        a.width = W; a.height = H;
-        DRAWERS[kind](a.getContext('2d'), W, H, leaf);
-        const b = document.createElement('canvas');
-        b.width = W; b.height = H;
-        const bx = b.getContext('2d');
-        bx.translate(W, 0); bx.scale(-1, 1); bx.drawImage(a, 0, 0);
-        return [a, b];
-      });
-    }
-    return out;
-  };
-
-  /* Two bands of rolling hills on the horizon. `scroll` is in units of U. */
-  function ridge(ctx, L, base, scroll, amp, lift, seed, color) {
-    const steps = 72, dx = L.W / steps;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(0, L.H);
-    for (let i = 0; i <= steps; i++) {
-      const x = i * dx, u = x / L.U + scroll;
-      const f = 0.5 + 0.26 * Math.sin(u * 2.3 + seed) + 0.16 * Math.sin(u * 5.1 + seed * 2.7) + 0.06 * Math.sin(u * 12.9 + seed * 5.3);
-      ctx.lineTo(x, base - L.U * (lift + amp * f));
-    }
-    ctx.lineTo(L.W, L.H);
-    ctx.closePath();
-    ctx.fill();
-  }
+  // hills = a row of big ellipses sitting on the horizon
+  var HILLS = [[0, 0.32, 0.07], [0.45, 0.25, 0.1], [0.8, 0.4, 0.06], [1.3, 0.3, 0.09], [1.7, 0.22, 0.05], [2.1, 0.35, 0.08]];
+  var HSPAN = 2.4;
 
   SW.drawHills = function (ctx, L, base, scroll) {
-    ridge(ctx, L, base, scroll * 0.85, 0.08, 0.008, 1.3, S.hillFar);
-    ridge(ctx, L, base, scroll * 1.1, 0.045, 0.002, 4.1, S.hillNear);
-    ctx.fillStyle = S.haze;
-    ctx.fillRect(0, base - 1, L.W, L.H - base + 1);
+    ctx.fillStyle = S.hills;
+    for (var i = 0; i < HILLS.length; i++) {
+      var h = HILLS[i];
+      var u = ((h[0] - scroll) % HSPAN + HSPAN) % HSPAN;
+      var x = (u - 0.3) * L.H;
+      ctx.beginPath();
+      ctx.ellipse(x, base, h[1] * L.H, h[2] * L.H, 0, Math.PI, 0);
+      ctx.fill();
+    }
+    // flat ground under everything, in case the road dips below the horizon
+    ctx.fillStyle = S.grass[0];
+    ctx.fillRect(0, base, L.W, L.H - base);
+  };
+
+  // x = centre, y = ground, k = pixels per metre
+  SW.drawProp = function (ctx, p, x, y, k) {
+    var h = p.h * k;
+    var lw = Math.max(1, k * 0.08);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = S.outline;
+    if (p.kind === 'bush') {
+      ctx.fillStyle = S.leaf[p.v];
+      ctx.beginPath();
+      ctx.ellipse(x, y, h * 1.1, h, 0, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      return;
+    }
+    var tw = h * 0.1;
+    ctx.fillStyle = S.trunk;
+    ctx.fillRect(x - tw / 2, y - h * 0.45, tw, h * 0.45);
+    ctx.strokeRect(x - tw / 2, y - h * 0.45, tw, h * 0.45);
+    ctx.fillStyle = S.leaf[p.v];
+    ctx.beginPath();
+    if (p.kind === 'pine') {
+      ctx.moveTo(x, y - h);
+      ctx.lineTo(x + h * 0.24, y - h * 0.25);
+      ctx.lineTo(x - h * 0.24, y - h * 0.25);
+      ctx.closePath();
+    } else {
+      ctx.arc(x, y - h * 0.65, h * 0.35, 0, Math.PI * 2);
+    }
+    ctx.fill(); ctx.stroke();
   };
 })(window.SW);

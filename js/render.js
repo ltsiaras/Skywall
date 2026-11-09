@@ -1,322 +1,72 @@
-/* Skywall · render.js
-   A pseudo-3D road on a 2D canvas: segments projected front to back over
-   the sky plate and the far hills, trees and bushes in the fields, then the
-   box, the car, the fixation cross and the sign.
-
-   Layout follows the study: sign above the fixation cross, car below it,
-   about 1.9° of visual angle apart (≈75 CSS px at laptop distance). */
+/* render.js - pseudo 3D road on a 2D canvas.
+   Draw order: sky, hills, road segments (near to far, clipped), trees,
+   box, car, cross, sign. Canvas is a fixed 4:3 window at 1x resolution
+   (portrait phones get the whole screen). */
 (function (SW) {
   'use strict';
 
-  const C = SW.COLORS;
-  const S = SW.SCENE;
-  const SEG = SW.SEG;
-  const R = 4;           // road half-width, metres
-  const D = 7;           // camera → car, metres
-  const BOX = 1.6;       // speed band: how far the car moves fore/aft on the road, metres
-  const BOX_FRONT = 2.2; // the box's front line sits this far past the car's rear axle
-  const DRAW = 210;      // segments drawn (~420 m)
-  const NEAR = 0.4;
-  const FOG0 = 50, FOG1 = 380;
-  const VERGE = 1.2;                 // gravel verge, as a multiple of the road's half-width
-  const LINE0 = 0.9, LINE1 = 0.96;   // painted edge line, inside the road edge
+  var S = SW.SCENE;
+  var SEG = SW.SEG;
+  var R = 4;           // road half width (m)
+  var D = 7;           // camera to car (m)
+  var BOX = 1.6;       // how far the car moves fore/aft (m)
+  var BOX_FRONT = 2.2; // front line of the box past the car (m)
+  var DRAW = 160;      // segments to draw
+  var NEAR = 0.4;
+  var KERB = 1.12;     // kerb outer edge, x road half width
 
-  SW.ROAD = { R, D, BOX };
+  SW.ROAD = { R: R, D: D, BOX: BOX };
 
-  function fogAt(z) {
-    if (z <= FOG0) return 0;
-    const t = Math.min(1, (z - FOG0) / (FOG1 - FOG0));
-    return t * t;
-  }
-
-  function layout(W, H, dpr) {
-    const U = Math.min(H, W / 1.15);
-    const portrait = H > W * 1.1;
-    const cx = W / 2;
-    const crossY = H * (portrait ? 0.47 : 0.5);
-    const gap = SW.clamp(U * 0.085, 44 * dpr, 100 * dpr);   // ≈1.9°
-    const carW = U * 0.19;
-    const carBottom = crossY + gap + carW * 0.55;
-    const horizon = crossY - U * 0.25;
-    const roadHalf = carW * 1.5625;          // car half-width is 0.32 of the road's
-    const fOverD = roadHalf / R;
-    const camH = (carBottom - horizon) / fOverD;
-    const f = D * fOverD;
+  function layout(W, H) {
+    var U = Math.min(H, W / 1.15);
+    var portrait = H > W * 1.1;
+    var cx = W / 2;
+    var crossY = H * (portrait ? 0.47 : 0.5);
+    var gap = SW.clamp(U * 0.085, 44, 100);   // sign/car distance from cross, about 1.9 deg
+    var carW = U * 0.19;
+    var carBottom = crossY + gap + carW * 0.55;
+    var horizon = crossY - U * 0.25;
+    var roadHalf = carW * 1.5625;
+    var fOverD = roadHalf / R;
+    var camH = (carBottom - horizon) / fOverD;
+    var f = D * fOverD;
     return {
-      W, H, dpr, U, cx, crossY, gap, carW, carBottom, horizon, camH, f,
+      W: W, H: H, U: U, cx: cx, crossY: crossY, gap: gap, carW: carW, carBottom: carBottom,
+      horizon: horizon, camH: camH, f: f,
       signY: crossY - gap,
       signR: gap * 0.3,
       arm: gap * 0.17,
-      thick: Math.max(2 * dpr, gap * 0.05)
+      thick: Math.max(2, Math.round(gap * 0.05))
     };
   }
 
-  // Equal-area shapes, so shape (not size) is the cue.
+  // same area for every shape so only the shape differs
   function signPath(ctx, shape, x, y, r) {
     ctx.beginPath();
     if (shape === 'circle') {
       ctx.arc(x, y, r, 0, Math.PI * 2);
     } else if (shape === 'square') {
-      const h = r * 0.886;
+      var h = r * 0.886;
       ctx.rect(x - h, y - h, h * 2, h * 2);
     } else {
-      const pr = r * 1.149;
-      for (let i = 0; i < 5; i++) {
-        const a = -Math.PI / 2 + i * Math.PI * 2 / 5;
-        const px = x + Math.cos(a) * pr, py = y + Math.sin(a) * pr + pr * 0.1;
+      var pr = r * 1.149;
+      for (var i = 0; i < 5; i++) {
+        var a = -Math.PI / 2 + i * Math.PI * 2 / 5;
+        var px = x + Math.cos(a) * pr, py = y + Math.sin(a) * pr + pr * 0.1;
         if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
       }
       ctx.closePath();
     }
   }
 
-  // A solid sign in the study's colour, with a thin light rim so it reads on
-  // the dark road and on the clouds alike.
   SW.drawSign = function (ctx, kind, x, y, r) {
-    const rim = Math.max(1.5, r * 0.1);
-    ctx.lineJoin = 'round';
     signPath(ctx, kind.shape, x, y, r);
-    ctx.strokeStyle = C.cloud; ctx.lineWidth = rim * 2; ctx.stroke();
-    ctx.fillStyle = SW.STIM[kind.fill]; ctx.fill();
+    ctx.fillStyle = SW.STIM[kind.fill];
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, r * 0.08);
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
   };
-
-  class Renderer {
-    constructor(canvas) {
-      this.cv = canvas;
-      this.ctx = canvas.getContext('2d', { alpha: false });
-      this.plate = null;
-      this.sprites = SW.buildSprites();
-      this.dprMax = Math.min(2, window.devicePixelRatio || 1);
-      this.dpr = this.dprMax;
-      const n = DRAW + 2;
-      this.bx = new Float32Array(n);
-      this.by = new Float32Array(n);
-      this.bw = new Float32Array(n);
-      this.bz = new Float32Array(n);
-      this.resize();
-    }
-
-    load(key, src) {
-      return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => { this[key] = img; resolve(img); };
-        img.onerror = () => resolve(null);
-        img.src = src;
-      });
-    }
-
-    setDpr(d) {
-      if (Math.abs(d - this.dpr) < 0.01) return;
-      this.dpr = d;
-      this.resize();
-    }
-
-    resize() {
-      const w = window.innerWidth, h = window.innerHeight;
-      this.cv.width = Math.round(w * this.dpr);
-      this.cv.height = Math.round(h * this.dpr);
-      this.L = layout(this.cv.width, this.cv.height, this.dpr);
-    }
-
-    /* st: { world, car, sign, flash, shake, showBox, showCross, reduced } */
-    draw(st) {
-      const ctx = this.ctx, L = this.L, w = st.world, tr = w.track;
-      const camS = w.carS - D;
-      const camY = tr.yAt(w.carS) + L.camH;
-      const carSeg = tr.at(w.carS);
-      const offAt = s => (s <= w.carS ? 0 : 0.5 * carSeg.curve * (s - w.carS) * (s - w.carS));
-
-      this.drawSky(w);
-      this.drawLand(w);
-
-      // Project segment boundaries. The road's sideways offset is integrated
-      // from the car forward, so the road under the car is always centred.
-      const { bx, by, bw, bz } = this;
-      const base = Math.max(0, Math.floor(camS / SEG));
-      const last = tr.segs.length - 1;
-      let x = 0, dx = 0;
-      for (let n = 0; n <= DRAW; n++) {
-        const i = base + n;
-        const s = i * SEG;
-        let off = 0;
-        if (i === carSeg.i + 1) {
-          const l = s - w.carS;
-          x = 0.5 * carSeg.curve * l * l; dx = carSeg.curve * l; off = x;
-        } else if (i > carSeg.i + 1) {
-          const c = tr.segs[Math.min(i - 1, last)].curve;
-          x += dx * SEG + 0.5 * c * SEG * SEG; dx += c * SEG; off = x;
-        }
-        const z = s - camS;
-        bz[n] = z;
-        if (z > NEAR) {
-          const k = L.f / z;
-          bx[n] = L.cx + off * k;
-          by[n] = L.horizon + (camY - tr.segs[Math.min(i, last)].y0) * k;
-          bw[n] = R * k;
-        }
-      }
-
-      // Segments, near to far. maxY is the highest screen row already covered.
-      let maxY = L.H;
-      const props = [];
-      for (let n = 0; n < DRAW; n++) {
-        if (bz[n] <= NEAR) continue;
-        const y1 = by[n], y2 = by[n + 1];
-        if (y2 >= y1 || y2 >= maxY) continue;
-        const i = base + n;
-        const seg = tr.segs[Math.min(i, last)];
-        const band = Math.floor(i / 3) % 2;
-        const x1 = bx[n], w1 = bw[n], x2 = bx[n + 1], w2 = bw[n + 1];
-        const clipped = y1 > maxY + 0.5;
-        if (clipped) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, L.W, maxY); ctx.clip(); }
-
-        // Fills reach 1px upward (toward the horizon), where the next, farther
-        // segment paints over them; reaching down would leave seams.
-        // Mown stripes in the fields, gravel verges, then the road with its
-        // two painted edge lines; bands alternate every 6 m for speed.
-        ctx.fillStyle = S.grass[band];
-        ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
-
-        ctx.fillStyle = S.shoulder[band];
-        quad(ctx, x1 - w1 * VERGE, x1 + w1 * VERGE, y1, x2 - w2 * VERGE, x2 + w2 * VERGE, y2 - 0.5);
-
-        ctx.fillStyle = S.road[band];
-        quad(ctx, x1 - w1, x1 + w1, y1, x2 - w2, x2 + w2, y2 - 0.5);
-
-        if (w1 > 6) {
-          ctx.fillStyle = S.line;
-          quad(ctx, x1 - w1 * LINE1, x1 - w1 * LINE0, y1, x2 - w2 * LINE1, x2 - w2 * LINE0, y2 - 0.5);
-          quad(ctx, x1 + w1 * LINE0, x1 + w1 * LINE1, y1, x2 + w2 * LINE0, x2 + w2 * LINE1, y2 - 0.5);
-        }
-
-        const fog = fogAt(bz[n]);
-        if (fog > 0.01) {
-          ctx.globalAlpha = fog;
-          ctx.fillStyle = S.haze;
-          ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
-          ctx.globalAlpha = 1;
-        }
-        if (clipped) ctx.restore();
-        if (seg.prop) props.push(n, maxY);
-        maxY = y2;
-      }
-
-      this.drawProps(props, tr, base);
-      if (st.showBox) this.drawBox(st, camS, camY, offAt);
-      this.drawCarAt(st, camS, camY, offAt);
-      if (st.showCross) this.drawCross(st);
-      if (st.sign) SW.drawSign(ctx, st.sign, L.cx, L.signY, L.signR);
-    }
-
-    drawSky(w) {
-      const ctx = this.ctx, L = this.L, img = this.plate;
-      ctx.fillStyle = C.sky;
-      ctx.fillRect(0, 0, L.W, L.H);
-      if (!img) return;
-      const anchor = 0.7; // where the plate's cloud sea begins
-      const s = Math.max(L.W / img.width, (L.horizon + L.H * 0.08) / (img.height * anchor));
-      const dw = img.width * s, dh = img.height * s;
-      const y0 = L.horizon - img.height * anchor * s + w.bgY * L.U;
-      const period = 2 * dw;
-      const x0 = -((((w.bgX * L.U * 0.6) % period) + period) % period);
-      for (let x = x0, k = 0; x < L.W; x += dw, k++) {
-        if (x + dw < 0) continue;
-        if (k % 2 === 0) {
-          ctx.drawImage(img, x, y0, dw, dh);
-        } else {
-          ctx.save();
-          ctx.translate(x + dw, y0);
-          ctx.scale(-1, 1);
-          ctx.drawImage(img, 0, 0, dw, dh);
-          ctx.restore();
-        }
-      }
-    }
-
-    drawLand(w) {
-      SW.drawHills(this.ctx, this.L, this.L.horizon + w.bgY * this.L.U, w.bgX);
-    }
-
-    // Far to near, each clipped to what nearer ground hasn't already covered.
-    drawProps(props, tr, base) {
-      const ctx = this.ctx, L = this.L;
-      for (let j = props.length - 2; j >= 0; j -= 2) {
-        const n = props[j], clip = props[j + 1];
-        const p = tr.segs[base + n].prop;
-        const img = this.sprites[p.kind][p.v][p.flip];
-        const k = this.bw[n] / R;
-        const ph = p.h * k, pw = ph * img.width / img.height;
-        const cx = this.bx[n] + p.x * k;
-        if (cx + pw / 2 < 0 || cx - pw / 2 > L.W || ph < 1.5) continue;
-        const bottom = this.by[n] + ph * 0.02;
-        const top = bottom - ph;
-        if (top >= clip) continue;
-        const visH = Math.min(ph, clip - top);
-        ctx.globalAlpha = 1 - 0.85 * fogAt(this.bz[n]);
-        ctx.drawImage(img, 0, 0, img.width, img.height * (visH / ph), cx - pw / 2, top, pw, visH);
-      }
-      ctx.globalAlpha = 1;
-    }
-
-    project(s, camS, camY, xm, offAt) {
-      const L = this.L, z = s - camS, k = L.f / z;
-      return { x: L.cx + (offAt(s) + xm) * k, y: L.horizon + (camY - this.trackY(s)) * k, k };
-    }
-
-    drawBox(st, camS, camY, offAt) {
-      const ctx = this.ctx, L = this.L, w = st.world;
-      this.trackY = s => w.track.yAt(s);
-      const back = camS + D - BOX, front = camS + D + BOX + BOX_FRONT;
-      const bl = this.project(back, camS, camY, -R, offAt), br = this.project(back, camS, camY, R, offAt);
-      const fl = this.project(front, camS, camY, -R, offAt), fr = this.project(front, camS, camY, R, offAt);
-      const thin = Math.max(2 * L.dpr, L.gap * 0.045);
-      const edge = (a, b, hit) => {
-        ctx.lineWidth = hit ? thin * 2.4 : thin;
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      };
-      // The study's box: yellow road boundaries, red speed boundaries.
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = SW.STIM.yellow;
-      edge(bl, fl, w.hitLeft);
-      edge(br, fr, w.hitRight);
-      ctx.strokeStyle = SW.STIM.red;
-      edge(bl, br, w.hitBack);
-      edge(fl, fr, w.hitFront);
-    }
-
-    drawCarAt(st, camS, camY, offAt) {
-      const L = this.L, w = st.world;
-      this.trackY = s => w.track.yAt(s);
-      const z = D + w.y * BOX;
-      const p = this.project(camS + z, camS, camY, w.x * R, offAt);
-      const lean = st.reduced ? 0 : w.ux * 0.03;
-      SW.drawCar(this.ctx, st.car, p.x, p.y, L.carW * D / z, { lean, brake: Math.max(0, -w.uy) });
-    }
-
-    drawCross(st) {
-      const ctx = this.ctx, L = this.L;
-      let x = L.cx, y = L.crossY;
-      const shaking = st.shake && !st.reduced;
-      if (shaking) {
-        x += (Math.random() - 0.5) * L.arm * 0.9;
-        y += (Math.random() - 0.5) * L.arm * 0.9;
-      }
-      const a = L.arm, t = L.thick, o = Math.max(1, t * 0.45);
-      let fill = C.cloud, outline = C.ink;
-      if (st.flash) fill = st.flash.ok ? SW.STIM.green : SW.STIM.red;
-      ctx.save();
-      ctx.translate(x, y);
-      // Reduced motion: an off-road cross turns into an × instead of shaking.
-      if (st.shake && st.reduced) ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = outline;
-      ctx.fillRect(-a - o, -t / 2 - o, (a + o) * 2, t + o * 2);
-      ctx.fillRect(-t / 2 - o, -a - o, t + o * 2, (a + o) * 2);
-      ctx.fillStyle = fill;
-      ctx.fillRect(-a, -t / 2, a * 2, t);
-      ctx.fillRect(-t / 2, -a, t, a * 2);
-      ctx.restore();
-    }
-  }
 
   function quad(ctx, xa, xb, y1, xc, xd, y2) {
     ctx.beginPath();
@@ -324,6 +74,169 @@
     ctx.closePath();
     ctx.fill();
   }
+
+  function Renderer(canvas) {
+    this.cv = canvas;
+    this.frame = canvas.parentNode;
+    this.ctx = canvas.getContext('2d', { alpha: false });
+    this.bx = new Float32Array(DRAW + 2);
+    this.by = new Float32Array(DRAW + 2);
+    this.bw = new Float32Array(DRAW + 2);
+    this.bz = new Float32Array(DRAW + 2);
+    this.resize();
+  }
+
+  Renderer.prototype.resize = function () {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var w = vw, h = vh;
+    if (vw > vh * 1.1) {             // landscape: 4:3 window with black bars
+      w = Math.min(vw, Math.round(vh * 4 / 3));
+      h = Math.min(vh, Math.round(w * 3 / 4));
+    }
+    var fs = this.frame.style;
+    fs.width = w + 'px';
+    fs.height = h + 'px';
+    fs.left = Math.floor((vw - w) / 2) + 'px';
+    fs.top = Math.floor((vh - h) / 2) + 'px';
+    this.cv.width = w;
+    this.cv.height = h;
+    this.L = layout(w, h);
+  };
+
+  /* st = { world, car, sign, flash, shake, showBox, showCross, reduced } */
+  Renderer.prototype.draw = function (st) {
+    var ctx = this.ctx, L = this.L, w = st.world, tr = w.track;
+    var camS = w.carS - D;
+    var camY = tr.yAt(w.carS) + L.camH;
+    var carSeg = tr.at(w.carS);
+    var offAt = function (s) { return s <= w.carS ? 0 : 0.5 * carSeg.curve * (s - w.carS) * (s - w.carS); };
+    var bx = this.bx, by = this.by, bw = this.bw, bz = this.bz;
+
+    SW.drawSky(ctx, L, w.bgX);
+    SW.drawHills(ctx, L, L.horizon + w.bgY * L.U, w.bgX);
+
+    // project segment edges. road under the car is always centred.
+    var base = Math.max(0, Math.floor(camS / SEG));
+    var last = tr.segs.length - 1;
+    var x = 0, dx = 0, n, i;
+    for (n = 0; n <= DRAW; n++) {
+      i = base + n;
+      var s = i * SEG, off = 0;
+      if (i === carSeg.i + 1) {
+        var l = s - w.carS;
+        x = 0.5 * carSeg.curve * l * l; dx = carSeg.curve * l; off = x;
+      } else if (i > carSeg.i + 1) {
+        var c = tr.segs[Math.min(i - 1, last)].curve;
+        x += dx * SEG + 0.5 * c * SEG * SEG; dx += c * SEG; off = x;
+      }
+      var z = s - camS;
+      bz[n] = z;
+      if (z > NEAR) {
+        var k = L.f / z;
+        bx[n] = L.cx + off * k;
+        by[n] = L.horizon + (camY - tr.segs[Math.min(i, last)].y0) * k;
+        bw[n] = R * k;
+      }
+    }
+
+    // segments near to far. maxY = top of what's already drawn.
+    var maxY = L.H;
+    var props = [];
+    for (n = 0; n < DRAW; n++) {
+      if (bz[n] <= NEAR) continue;
+      var y1 = by[n], y2 = by[n + 1];
+      if (y2 >= y1 || y2 >= maxY) continue;
+      i = base + n;
+      var seg = tr.segs[Math.min(i, last)];
+      var band = Math.floor(i / 3) % 2;
+      var x1 = bx[n], w1 = bw[n], x2 = bx[n + 1], w2 = bw[n + 1];
+      var clipped = y1 > maxY + 0.5;
+      if (clipped) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, L.W, maxY); ctx.clip(); }
+
+      ctx.fillStyle = S.grass[band];
+      ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
+      ctx.fillStyle = S.rumble[band];
+      quad(ctx, x1 - w1 * KERB, x1 + w1 * KERB, y1, x2 - w2 * KERB, x2 + w2 * KERB, y2 - 0.5);
+      ctx.fillStyle = S.road[band];
+      quad(ctx, x1 - w1, x1 + w1, y1, x2 - w2, x2 + w2, y2 - 0.5);
+
+      if (clipped) ctx.restore();
+      if (seg.prop) props.push(n, maxY);
+      maxY = y2;
+    }
+
+    // trees far to near, cut off where nearer ground already covers them
+    for (var j = props.length - 2; j >= 0; j -= 2) {
+      n = props[j];
+      var clip = props[j + 1];
+      var p = tr.segs[base + n].prop;
+      var kk = bw[n] / R;
+      var px = bx[n] + p.x * kk;
+      var top = by[n] - p.h * kk;
+      if (p.h * kk < 2 || top >= clip || px < -p.h * kk || px > L.W + p.h * kk) continue;
+      if (by[n] > clip) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, L.W, clip); ctx.clip(); }
+      SW.drawProp(ctx, p, px, by[n], kk);
+      if (by[n] > clip) ctx.restore();
+    }
+
+    this.trackY = function (s) { return tr.yAt(s); };
+    if (st.showBox) this.drawBox(w, camS, camY, offAt);
+    this.drawCar(st, camS, camY, offAt);
+    if (st.showCross) this.drawCross(st);
+    if (st.sign) SW.drawSign(ctx, st.sign, L.cx, L.signY, L.signR);
+  };
+
+  Renderer.prototype.project = function (s, camS, camY, xm, offAt) {
+    var L = this.L, k = L.f / (s - camS);
+    return { x: L.cx + (offAt(s) + xm) * k, y: L.horizon + (camY - this.trackY(s)) * k };
+  };
+
+  // the box: yellow = road edges, red = speed limits. thicker when you hit it.
+  Renderer.prototype.drawBox = function (w, camS, camY, offAt) {
+    var ctx = this.ctx;
+    var back = camS + D - BOX, front = camS + D + BOX + BOX_FRONT;
+    var bl = this.project(back, camS, camY, -R, offAt), br = this.project(back, camS, camY, R, offAt);
+    var fl = this.project(front, camS, camY, -R, offAt), fr = this.project(front, camS, camY, R, offAt);
+    function line(a, b, color, hit) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = hit ? 6 : 3;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    line(bl, fl, SW.STIM.yellow, w.hitLeft);
+    line(br, fr, SW.STIM.yellow, w.hitRight);
+    line(bl, br, SW.STIM.red, w.hitBack);
+    line(fl, fr, SW.STIM.red, w.hitFront);
+  };
+
+  Renderer.prototype.drawCar = function (st, camS, camY, offAt) {
+    var w = st.world;
+    var z = D + w.y * BOX;
+    var p = this.project(camS + z, camS, camY, w.x * R, offAt);
+    var lean = st.reduced ? 0 : w.ux * 0.03;
+    SW.drawCar(this.ctx, st.car, p.x, p.y, this.L.carW * D / z, { lean: lean, brake: Math.max(0, -w.uy) });
+  };
+
+  Renderer.prototype.drawCross = function (st) {
+    var ctx = this.ctx, L = this.L;
+    var x = L.cx, y = L.crossY;
+    if (st.shake && !st.reduced) {
+      x += (Math.random() - 0.5) * L.arm;
+      y += (Math.random() - 0.5) * L.arm;
+    }
+    var a = L.arm, t = L.thick;
+    var fill = '#FFFFFF';
+    if (st.flash) fill = st.flash.ok ? SW.STIM.green : SW.STIM.red;
+    ctx.save();
+    ctx.translate(Math.round(x), Math.round(y));
+    if (st.shake && st.reduced) ctx.rotate(Math.PI / 4);   // reduced motion: x instead of shaking
+    ctx.fillStyle = '#000';
+    ctx.fillRect(-a - 1, -t / 2 - 1, a * 2 + 2, t + 2);
+    ctx.fillRect(-t / 2 - 1, -a - 1, t + 2, a * 2 + 2);
+    ctx.fillStyle = fill;
+    ctx.fillRect(-a, -t / 2, a * 2, t);
+    ctx.fillRect(-t / 2, -a, t, a * 2);
+    ctx.restore();
+  };
 
   SW.Renderer = Renderer;
 })(window.SW);
