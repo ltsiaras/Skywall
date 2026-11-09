@@ -67,13 +67,14 @@
     }
   }
 
+  // A solid sign in the study's colour, with a thin light rim so it reads on
+  // the dark road and on the clouds alike.
   SW.drawSign = function (ctx, kind, x, y, r) {
-    const ink = Math.max(1.5, r * 0.09), halo = Math.max(1.5, r * 0.11);
+    const rim = Math.max(1.5, r * 0.1);
     ctx.lineJoin = 'round';
     signPath(ctx, kind.shape, x, y, r);
-    ctx.strokeStyle = C.cloud; ctx.lineWidth = (ink + halo) * 2; ctx.stroke();
-    ctx.fillStyle = C[kind.fill]; ctx.fill();
-    ctx.strokeStyle = C.ink; ctx.lineWidth = ink; ctx.stroke();
+    ctx.strokeStyle = C.cloud; ctx.lineWidth = rim * 2; ctx.stroke();
+    ctx.fillStyle = SW.STIM[kind.fill]; ctx.fill();
   };
 
   class Renderer {
@@ -265,12 +266,14 @@
         ctx.lineWidth = hit ? thin * 2.4 : thin;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       };
-      ctx.strokeStyle = C.cloud;
+      // The study's box: yellow road boundaries, red speed boundaries.
       ctx.lineCap = 'round';
-      edge(bl, br, w.hitBack);
-      edge(fl, fr, w.hitFront);
+      ctx.strokeStyle = SW.STIM.yellow;
       edge(bl, fl, w.hitLeft);
       edge(br, fr, w.hitRight);
+      ctx.strokeStyle = SW.STIM.red;
+      edge(bl, br, w.hitBack);
+      edge(fl, fr, w.hitFront);
     }
 
     drawCarAt(st, camS, camY, offAt) {
@@ -292,7 +295,7 @@
       }
       const a = L.arm, t = L.thick, o = Math.max(1, t * 0.45);
       let fill = C.cloud, outline = C.ink;
-      if (st.flash) { fill = st.flash.ok ? C.sky : C.ink; outline = C.cloud; }
+      if (st.flash) fill = st.flash.ok ? SW.STIM.green : SW.STIM.red;
       ctx.save();
       ctx.translate(x, y);
       // Reduced motion: an off-road cross turns into an × instead of shaking.

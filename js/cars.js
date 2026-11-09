@@ -5,6 +5,9 @@
   'use strict';
 
   const C = SW.COLORS = { sky: '#1470C4', haze: '#BCD4EA', cloud: '#F6F4EE', ink: '#0A1626' };
+  // The study's task colours: sign fills, answer feedback and the box's
+  // yellow and red boundaries. Everything else stays in the four colours.
+  SW.STIM = { green: '#1FA84A', red: '#E2362B', blue: '#2563E0', yellow: '#F4C20D' };
 
   // Proportions are fractions of the car's width.
   SW.CARS = [

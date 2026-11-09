@@ -11,7 +11,7 @@
     lures: 48,
     isi: [2, 2.5, 3],         // sign onset to next onset, seconds
     signMs: 400,              // each sign is on screen for 400 ms
-    feedbackMs: 100,          // fixation-cross colour change
+    feedbackMs: 50,           // fixation-cross colour change (the 2013 game's 50 ms)
     tailSeconds: 1.2,         // after the last sign, so its window can close
     sign: { min: 1, max: 54, start: 29 },   // 54 sign levels, everyone starts at 29 (500 ms)
     road: { min: 0, max: 199, start: 20 },  // 200 road levels, everyone starts at 20
@@ -56,14 +56,13 @@
   }
 
   // ---------- signs ----------
-  // Three colours × three shapes. The target is one conjunction; the other
-  // eight share one feature with it or none. Colours are the site's palette
-  // (Sky, Ink, Cloud) instead of the study's green, red and blue.
+  // The study's three colours × three shapes. The target is one conjunction;
+  // the other eight share one feature with it or none.
 
   const COLORS = [
-    { id: 'blue', fill: 'sky' },
-    { id: 'black', fill: 'ink' },
-    { id: 'white', fill: 'cloud' }
+    { id: 'green', fill: 'green' },
+    { id: 'red', fill: 'red' },
+    { id: 'blue', fill: 'blue' }
   ];
   const SHAPES = ['circle', 'pentagon', 'square'];
   const KINDS = [];
@@ -75,11 +74,11 @@
   const KIND = Object.fromEntries(KINDS.map(k => [k.id, k]));
 
   // The study showed each day's target before training. Day one is always the
-  // blue circle (our stand-in for the study's green circle), then it rotates.
+  // green circle, the study's target, then it rotates.
   const TARGET_ORDER = [
-    'blue-circle', 'black-square', 'white-pentagon',
-    'blue-square', 'white-circle', 'black-pentagon',
-    'blue-pentagon', 'black-circle', 'white-square'
+    'green-circle', 'red-square', 'blue-pentagon',
+    'green-square', 'blue-circle', 'red-pentagon',
+    'green-pentagon', 'red-circle', 'blue-square'
   ];
 
   function targetForDay(dayIndex) {
