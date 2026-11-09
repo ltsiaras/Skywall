@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Skywall</title>
+<meta name="description" content="A two-task driving game: keep the car inside the box and answer one sign among many, at the same time. Built from the published methods of a 2013 multitasking-training study.">
+<meta name="theme-color" content="#1470C4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500&family=Instrument+Serif:ital@0;1&display=swap">
+<link rel="stylesheet" href="css/skywall.css">
+</head>
+<body>
+
+<canvas id="scene" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- Play: the thin run clock and the touch controls -->
+<div id="hud" hidden>
+  <div class="clock" aria-hidden="true"><div class="clock-fill"></div></div>
+  <p class="hud-run"><span data-run>Run 1</span> <button class="hud-pause" type="button" data-action="pause">Pause</button></p>
+</div>
+
+<div id="touch" aria-hidden="true" hidden>
+  <div class="stick"></div>
+  <div class="stick-knob"></div>
+  <p class="touch-hint touch-left">Hold and drag to drive</p>
+  <p class="touch-hint touch-right">Tap here to answer</p>
+</div>
+
+<!-- Menu -->
+<main id="menu" class="screen" aria-labelledby="title">
+  <header class="masthead">
+    <h1 id="title">Skywall</h1>
+  </header>
+
+  <section class="card menu-card" aria-label="Play">
+    <p class="lede">Drive the road and catch the sign, both at once.</p>
+    <div class="target-row">
+      <canvas class="sign-thumb" data-sign width="96" height="96" aria-hidden="true"></canvas>
+      <div>
+        <p class="label">Today's sign</p>
+        <p class="target-name" data-target-name>Blue circle</p>
+        <p class="note">Answer this one. Let every other sign go.</p>
+      </div>
+    </div>
+
+    <div class="cars" role="radiogroup" aria-label="Car">
+      <!-- filled from SW.CARS -->
+    </div>
+
+    <dl class="levels">
+      <div><dt>Sign window</dt><dd data-window>500 ms</dd></div>
+      <div><dt>Road level</dt><dd data-road>20</dd></div>
+      <div><dt>Overall</dt><dd data-overall>0</dd></div>
+    </dl>
+
+    <div class="journey">
+      <ol class="stops" aria-hidden="true"></ol>
+      <p class="note" data-journey>Stop 1 of 12 · 0 of 20 runs</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" type="button" data-action="start">Start</button>
+      <button class="btn quiet" type="button" data-action="how" aria-expanded="false" aria-controls="how">How to play</button>
+    </div>
+
+    <div id="how" class="how" hidden>
+      <ol>
+        <li><b>Look at the cross</b> in the middle of the screen the whole time.</li>
+        <li><b>Drive with your left hand.</b> <span class="k-drive">Arrow keys or WASD</span>: left and right to steer, up to speed up, down to slow down. Keep the car inside the box. Turns push you sideways; hills slow you down or speed you up. If you touch the edge of the box, the cross shakes.</li>
+        <li><b>Answer with your right hand.</b> When <span data-target-inline>the blue circle</span> appears, <span class="k-respond">press Space</span> as fast as you can. Leave every other sign alone.</li>
+        <li>A run lasts three minutes. After each run, both tasks adjust so you stay at about 80% on each. Get both above 80% to go up a level overall.</li>
+      </ol>
+      <p class="note">Gamepad: left stick drives, A or the right trigger answers. Phone: hold the left half to steer, tap the right half to answer.</p>
+      <button class="btn quiet small" type="button" data-action="reset">Reset my levels</button>
+    </div>
+  </section>
+
+  <footer class="credit homage">
+    <p class="homage-title">In homage to NeuroRacer</p>
+    <p>Built from the published methods of the UCSF study that tested it (Anguera et&nbsp;al., <i>Nature</i>&nbsp;2013). Not affiliated with UCSF or Akili.</p>
+  </footer>
+</main>
+
+<!-- Before each run -->
+<section id="brief" class="screen center" hidden aria-labelledby="brief-title">
+  <div class="card brief-card">
+    <h2 id="brief-title" data-run>Run 1</h2>
+    <div class="target-row">
+      <canvas class="sign-thumb" data-sign width="96" height="96" aria-hidden="true"></canvas>
+      <p class="brief-line"><span class="k-respond-cap">Press Space</span> only for <b data-target-inline>the blue circle</b>.</p>
+    </div>
+    <ul class="reminders">
+      <li>Eyes on the cross.</li>
+      <li>Keep the car inside the box: on the road, not too fast, not too slow.</li>
+      <li>Both tasks count the same.</li>
+    </ul>
+    <div class="actions">
+      <button class="btn primary" type="button" data-action="go">Start run</button>
+      <button class="btn quiet" type="button" data-action="menu">Menu</button>
+    </div>
+    <p class="note"><span class="k-ready">Or press Space when you're ready.</span></p>
+  </div>
+</section>
+
+<!-- Paused -->
+<section id="pause" class="screen center" hidden aria-labelledby="pause-title">
+  <div class="card small-card">
+    <h2 id="pause-title">Paused</h2>
+    <p class="note">The run clock is stopped.</p>
+    <div class="actions">
+      <button class="btn primary" type="button" data-action="resume">Resume</button>
+      <button class="btn quiet" type="button" data-action="quit">Quit run</button>
+    </div>
+    <p class="note">Quitting throws this run away. Your levels stay as they were.</p>
+  </div>
+</section>
+
+<!-- After each run -->
+<section id="results" class="screen center" hidden aria-labelledby="results-title">
+  <div class="card results-card">
+    <h2 id="results-title" data-run>Run 1</h2>
+    <div class="scores">
+      <div class="score">
+        <p class="label">Signs</p>
+        <p class="big" data-sign-acc>0%</p>
+        <p class="note">correct</p>
+      </div>
+      <div class="score">
+        <p class="label">Driving</p>
+        <p class="big" data-drive-acc>0%</p>
+        <p class="note">of the time in the box</p>
+      </div>
+    </div>
+    <p class="overall" data-overall-line></p>
+    <p class="detail" data-detail></p>
+    <dl class="levels next">
+      <div><dt>Next sign window</dt><dd data-next-window></dd></div>
+      <div><dt>Next road level</dt><dd data-next-road></dd></div>
+    </dl>
+    <div class="actions">
+      <button class="btn primary" type="button" data-action="next">Next run</button>
+      <button class="btn quiet" type="button" data-action="menu">Menu</button>
+    </div>
+    <p class="note"><span class="k-next">Or press Space.</span></p>
+  </div>
+</section>
+
+<!-- Every 4th run -->
+<section id="fact" class="screen center" hidden aria-labelledby="fact-title">
+  <div class="card small-card">
+    <p class="label">A fact for the road</p>
+    <h2 id="fact-title" class="fact" data-fact></h2>
+    <div class="actions">
+      <button class="btn primary" type="button" data-action="continue">Continue</button>
+    </div>
+  </div>
+</section>
+
+<noscript><p class="noscript">Skywall needs JavaScript to run.</p></noscript>
+
+<script src="js/protocol.js"></script>
+<script src="js/cars.js"></script>
+<script src="js/track.js"></script>
+<script src="js/render.js"></script>
+<script src="js/input.js"></script>
+<script src="js/store.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
