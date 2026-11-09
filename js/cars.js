@@ -24,7 +24,7 @@
     ctx.closePath();
   }
 
-  /* car with its wheels on (x, bottom), w px wide. o = { lean, brake, shadow } */
+  /* car with its wheels on (x, bottom), w px wide. o = { lean, brake, shadow, spin 0..1 } */
   SW.drawCar = function (ctx, d, x, bottom, w, o) {
     o = o || {};
     var h = w * d.h;
@@ -44,11 +44,19 @@
     ctx.lineWidth = lw;
     ctx.strokeStyle = '#000';
 
-    // wheels
-    ctx.fillStyle = '#111';
+    // wheels, with tread lines that roll down as you drive
     var tw = w * 0.16, th = h * 0.26;
-    ctx.fillRect(-w / 2 + w * 0.06, -th, tw, th);
-    ctx.fillRect(w / 2 - w * 0.06 - tw, -th, tw, th);
+    var wl = -w / 2 + w * 0.06, wr = w / 2 - w * 0.06 - tw;
+    ctx.fillStyle = '#111';
+    ctx.fillRect(wl, -th, tw, th);
+    ctx.fillRect(wr, -th, tw, th);
+    ctx.fillStyle = '#3C3C3C';
+    var gh = Math.max(1, th * 0.09);
+    for (var g = 0; g < 3; g++) {
+      var gy = -th + (((g / 3) + (o.spin || 0)) % 1) * (th - gh);
+      ctx.fillRect(wl + 1, gy, tw - 2, gh);
+      ctx.fillRect(wr + 1, gy, tw - 2, gh);
+    }
 
     // body
     var bb = -h * 0.12, bt = bb - w * d.bodyH;
@@ -92,6 +100,8 @@
     ctx.fillStyle = '#888';
     ctx.fillRect(-w * 0.48, bb - h * 0.06, w * 0.96, h * 0.08);
     ctx.strokeRect(-w * 0.48, bb - h * 0.06, w * 0.96, h * 0.08);
+    ctx.fillStyle = '#444';                               // tailpipe
+    ctx.fillRect(-w * 0.34, bb + h * 0.02, w * 0.08, h * 0.04);
     ctx.fillStyle = '#FFF';
     ctx.fillRect(-w * 0.12, bb - h * 0.2, w * 0.24, h * 0.1);
     ctx.strokeRect(-w * 0.12, bb - h * 0.2, w * 0.24, h * 0.1);

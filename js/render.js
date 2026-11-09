@@ -1,6 +1,6 @@
 /* render.js - pseudo 3D road on a 2D canvas.
-   Draw order: sky, hills, road segments (near to far, clipped), trees,
-   box, car, cross, sign. Canvas is a fixed 4:3 window at 1x resolution
+   Draw order: sky, hills, road segments (near to far, clipped, hazy far
+   away), trees, box, car, exhaust, cross, sign. Canvas is a fixed 4:3 window at 1x resolution
    (portrait phones get the whole screen). */
 (function (SW) {
   'use strict';
@@ -14,6 +14,13 @@
   var DRAW = 160;      // segments to draw
   var NEAR = 0.4;
   var KERB = 1.12;     // kerb outer edge, x road half width
+  var FOG0 = 90, FOG1 = DRAW * SEG;   // haze starts at 90 m, full at the draw limit
+
+  function fogAt(z) {
+    if (z <= FOG0) return 0;
+    var t = Math.min(1, (z - FOG0) / (FOG1 - FOG0));
+    return t * t * 0.9;
+  }
 
   SW.ROAD = { R: R, D: D, BOX: BOX };
 
@@ -83,6 +90,8 @@
     this.by = new Float32Array(DRAW + 2);
     this.bw = new Float32Array(DRAW + 2);
     this.bz = new Float32Array(DRAW + 2);
+    this.puffs = [];
+    this.puffClock = 0;
     this.resize();
   }
 
@@ -103,7 +112,7 @@
     this.L = layout(w, h);
   };
 
-  /* st = { world, car, sign, flash, shake, showBox, showCross, reduced } */
+  /* st = { world, car, sign, flash, shake, showBox, showCross, reduced, time, dt, exhaust } */
   Renderer.prototype.draw = function (st) {
     var ctx = this.ctx, L = this.L, w = st.world, tr = w.track;
     var camS = w.carS - D;
@@ -112,7 +121,7 @@
     var offAt = function (s) { return s <= w.carS ? 0 : 0.5 * carSeg.curve * (s - w.carS) * (s - w.carS); };
     var bx = this.bx, by = this.by, bw = this.bw, bz = this.bz;
 
-    SW.drawSky(ctx, L, w.bgX);
+    SW.drawSky(ctx, L, w.bgX, st.reduced ? 0 : (st.time || 0));
     SW.drawHills(ctx, L, L.horizon + w.bgY * L.U, w.bgX);
 
     // project segment edges. road under the car is always centred.
@@ -160,6 +169,14 @@
       ctx.fillStyle = S.road[band];
       quad(ctx, x1 - w1, x1 + w1, y1, x2 - w2, x2 + w2, y2 - 0.5);
 
+      var fog = fogAt(bz[n]);
+      if (fog > 0.01) {
+        ctx.globalAlpha = fog;
+        ctx.fillStyle = S.haze;
+        ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
+        ctx.globalAlpha = 1;
+      }
+
       if (clipped) ctx.restore();
       if (seg.prop) props.push(n, maxY);
       maxY = y2;
@@ -175,13 +192,16 @@
       var top = by[n] - p.h * kk;
       if (p.h * kk < 2 || top >= clip || px < -p.h * kk || px > L.W + p.h * kk) continue;
       if (by[n] > clip) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, L.W, clip); ctx.clip(); }
+      ctx.globalAlpha = 1 - fogAt(bz[n]);
       SW.drawProp(ctx, p, px, by[n], kk);
+      ctx.globalAlpha = 1;
       if (by[n] > clip) ctx.restore();
     }
 
     this.trackY = function (s) { return tr.yAt(s); };
     if (st.showBox) this.drawBox(w, camS, camY, offAt);
-    this.drawCar(st, camS, camY, offAt);
+    var tail = this.drawCar(st, camS, camY, offAt);
+    this.drawExhaust(st, tail);
     if (st.showCross) this.drawCross(st);
     if (st.sign) SW.drawSign(ctx, st.sign, L.cx, L.signY, L.signR);
   };
@@ -212,8 +232,34 @@
     var w = st.world;
     var z = D + w.y * BOX;
     var p = this.project(camS + z, camS, camY, w.x * R, offAt);
+    var cw = this.L.carW * D / z;
     var lean = st.reduced ? 0 : w.ux * 0.03;
-    SW.drawCar(this.ctx, st.car, p.x, p.y, this.L.carW * D / z, { lean: lean, brake: Math.max(0, -w.uy) });
+    var bob = st.reduced ? 0 : Math.sin(w.carS * 1.9) * cw * 0.006;   // a little suspension
+    SW.drawCar(this.ctx, st.car, p.x, p.y + bob, cw, {
+      lean: lean, brake: Math.max(0, -w.uy), spin: (w.carS / 0.5) % 1
+    });
+    return { x: p.x - cw * 0.3, y: p.y + bob - cw * st.car.h * 0.1, w: cw, gas: Math.max(0, w.uy) };
+  };
+
+  // exhaust: grey circles that grow, drift down toward the camera and fade
+  Renderer.prototype.drawExhaust = function (st, tail) {
+    var ctx = this.ctx, dt = st.dt || 0, puffs = this.puffs, i, q;
+    if (st.exhaust && !st.reduced && dt > 0) {
+      this.puffClock += dt * (8 + 16 * tail.gas);
+      while (this.puffClock >= 1 && puffs.length < 40) {
+        this.puffClock -= 1;
+        puffs.push({ x: tail.x, y: tail.y, r: tail.w * 0.025, vx: (Math.random() - 0.6) * tail.w * 0.3, vy: tail.w * 0.22, life: 1 });
+      }
+    }
+    if (st.reduced || !st.exhaust) { puffs.length = 0; return; }
+    for (i = puffs.length - 1; i >= 0; i--) {
+      q = puffs[i];
+      q.life -= dt / 0.6;
+      if (q.life <= 0) { puffs.splice(i, 1); continue; }
+      q.x += q.vx * dt; q.y += q.vy * dt; q.r += tail.w * 0.14 * dt;
+      ctx.fillStyle = 'rgba(225,225,225,' + (q.life * 0.45).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(q.x, q.y, q.r, 0, Math.PI * 2); ctx.fill();
+    }
   };
 
   Renderer.prototype.drawCross = function (st) {

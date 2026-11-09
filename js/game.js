@@ -44,7 +44,11 @@
     'Your heart beats about 100,000 times a day.',
     'In the 2013 study this game is built from, people aged 60 to 85 trained for 12 hours and ended up multitasking better than untrained 20-year-olds.',
     'Those gains were still there six months later, with no training in between.',
-    'You blink 15 to 20 times a minute, and your brain keeps the world from going dark each time.'
+    'You blink 15 to 20 times a minute, and your brain keeps the world from going dark each time.',
+    'Before any training, the 2013 study had 174 people aged 20 to 79 play the game. Multitasking got harder steadily with age, decade by decade.',
+    'The training study split 46 people aged 60 to 85 three ways: both tasks at once, one task at a time, or no training at all.',
+    'Training on both tasks at once also helped with things the game never practised, like holding things in mind and staying focused.',
+    'The ideas behind that study went on to EndeavorRx, which in 2020 became the first video game the US FDA authorised as a treatment, for children with ADHD.'
   ];
 
   // ---------- set-up ----------
@@ -173,9 +177,9 @@
     run.driven += dt;
     if (world.onRoad) run.onRoad += dt;
 
-    const left = Math.max(0, Math.ceil(run.end - run.t));
-    const clock = Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+    const clock = fmtClock(Math.min(RUN_SECONDS, run.end - run.t));   // 3:00 down, not 3:02
     if (clock !== run.clock) { run.clock = clock; clockEl.textContent = clock; }
+    if (run.t > 0.6 && !countEl.hidden) countEl.hidden = true;
     if (run.t >= run.end) finish();
   }
 
@@ -202,19 +206,21 @@
   }
 
   // ---------- screens ----------
-  const screens = { menu: $('#menu'), brief: $('#brief'), pause: $('#pause'), results: $('#results'), fact: $('#fact') };
-  const hud = $('#hud'), touch = $('#touch'), clockEl = $('[data-clock]');
+  const screens = { menu: $('#menu'), about: $('#about'), brief: $('#brief'), pause: $('#pause'), results: $('#results'), fact: $('#fact') };
+  const hud = $('#hud'), touch = $('#touch'), clockEl = $('[data-clock]'), countEl = $('#count');
+  let countStart = 0;
 
   function setState(next) {
     state = next;
-    const screenFor = { menu: 'menu', brief: 'brief', paused: 'pause', results: 'results', fact: 'fact' };
+    const screenFor = { menu: 'menu', about: 'about', brief: 'brief', paused: 'pause', results: 'results', fact: 'fact' };
     const show = screenFor[next];
     for (const [name, el] of Object.entries(screens)) {
       el.hidden = name !== show;
     }
     const playing = next === 'play';
     input.captureKeys = playing;
-    hud.hidden = !(playing || next === 'paused');
+    hud.hidden = !(playing || next === 'paused' || next === 'count');
+    if (next !== 'count' && next !== 'play') countEl.hidden = true;
     touch.hidden = !playing || input.mode !== 'touch';
     if (playing && document.activeElement && document.activeElement.blur) document.activeElement.blur();
     if (show) {
@@ -233,10 +239,39 @@
     setState('brief');
   }
 
+  // 3, 2, 1 before the run clock starts. "GO!" stays up for the first
+  // 0.6 s of the run; the first sign never comes before 2 s.
+  const COUNT_STEP = 0.7;
+
   function go() {
+    if (state !== 'brief') return;
+    countStart = performance.now();
+    clockEl.textContent = fmtClock(RUN_SECONDS);
+    showCount('3');
+    setState('count');
+  }
+
+  function updateCount(now) {
+    const t = (now - countStart) / 1000;
+    if (t >= COUNT_STEP * 3) { begin(); return; }
+    showCount(String(3 - Math.floor(t / COUNT_STEP)));
+  }
+
+  function showCount(text) {
+    if (countEl.textContent !== text) countEl.textContent = text;
+    countEl.hidden = false;
+  }
+
+  function begin() {
     input.reset();
     run.startPerf = performance.now();
+    showCount('GO!');
     setState('play');
+  }
+
+  function fmtClock(sec) {
+    const left = Math.max(0, Math.ceil(sec));
+    return Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
   }
 
   function pause() {
@@ -297,6 +332,58 @@
       : `Session ${stop + 1} of ${P.stops}, run ${inStop} of ${P.runsPerStop}`;
 
     $$('.cars input').forEach(r => { r.checked = r.value === store.car; });
+    paintGraph();
+  }
+
+  // last 20 runs: signs (yellow) and driving (cyan), with the 80% line
+  function paintGraph() {
+    const cv = $('[data-graph]');
+    const ctx = cv.getContext('2d');
+    const W = cv.width, H = cv.height, padL = 30, padR = 8, padT = 8, padB = 16;
+    const runs = store.history.slice(-20);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, W, H);
+    ctx.font = '10px Verdana, sans-serif';
+    ctx.textBaseline = 'middle';
+    const yOf = v => padT + (1 - v / 100) * (H - padT - padB);
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'right';
+    for (const v of [0, 50, 100]) {
+      const y = Math.round(yOf(v)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+      ctx.fillText(v + '%', padL - 4, y);
+    }
+    ctx.strokeStyle = '#999';
+    ctx.setLineDash([4, 3]);
+    const y80 = Math.round(yOf(80)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, y80); ctx.lineTo(W - padR, y80); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#bbb';
+    ctx.fillText('80', padL - 4, y80);
+    if (!runs.length) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#888';
+      ctx.fillText('No runs yet. Your scores show up here.', (W + padL) / 2, H / 2 + 6);
+      return;
+    }
+    const step = (W - padL - padR) / Math.max(1, 19);
+    const xOf = i => padL + i * step + (runs.length === 1 ? (W - padL - padR) / 2 : 0);
+    for (const [key, color] of [['signAcc', '#FFD200'], ['driveAcc', '#4FC3F7']]) {
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      runs.forEach((r, i) => { const x = xOf(i), y = yOf(r[key]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+      ctx.stroke();
+      runs.forEach((r, i) => ctx.fillRect(xOf(i) - 2, yOf(r[key]) - 2, 4, 4));
+    }
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.fillText('run ' + runs[0].run, padL, H - 6);
+    ctx.textAlign = 'right';
+    ctx.fillText('run ' + runs[runs.length - 1].run, W - padR, H - 6);
   }
 
   function buildCars() {
@@ -327,6 +414,11 @@
     const pct = v => Math.round(v) + '%';
     $('[data-sign-acc]').textContent = pct(sc.signAcc);
     $('[data-drive-acc]').textContent = pct(sc.driveAcc);
+    for (const [sel, v] of [['[data-sign-bar]', sc.signAcc], ['[data-drive-bar]', sc.driveAcc]]) {
+      const bar = $(sel);
+      bar.style.width = SW.clamp(v, 0, 100) + '%';
+      bar.className = v > P.overallCriterion ? 'ok' : '';
+    }
     $('[data-overall-line]').textContent = sc.both
       ? `Both above 80%. Overall level ${store.overall}, up one.`
       : `Overall level stays at ${store.overall}. Get both above 80% to move up.`;
@@ -342,15 +434,16 @@
 
   function paintInputMode(mode) {
     const words = {
-      keys: { respond: 'press Space', ready: 'Or press Space when you’re ready.', next: 'Or press Space.', drive: 'Arrow keys or WASD' },
+      keys: { respond: 'press <kbd>Space</kbd>', ready: 'Or press <kbd>Space</kbd> when you’re ready.', next: 'Or press <kbd>Space</kbd>.', drive: '<kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>' },
       pad: { respond: 'press A or the right trigger', ready: 'Or press A when you’re ready.', next: 'Or press A.', drive: 'The left stick' },
       touch: { respond: 'tap the right half of the screen', ready: '', next: '', drive: 'Hold the left half of the screen and drag' }
     }[mode];
-    $$('.k-respond').forEach(el => { el.textContent = words.respond; });
-    $$('.k-respond-cap').forEach(el => { el.textContent = cap(words.respond); });
-    $$('.k-ready').forEach(el => { el.textContent = words.ready; });
-    $$('.k-next').forEach(el => { el.textContent = words.next; });
-    $$('.k-drive').forEach(el => { el.textContent = words.drive; });
+    // these strings are all fixed above, so innerHTML is safe
+    $$('.k-respond').forEach(el => { el.innerHTML = words.respond; });
+    $$('.k-respond-cap').forEach(el => { el.innerHTML = cap(words.respond); });
+    $$('.k-ready').forEach(el => { el.innerHTML = words.ready; });
+    $$('.k-next').forEach(el => { el.innerHTML = words.next; });
+    $$('.k-drive').forEach(el => { el.innerHTML = words.drive; });
     if (state === 'play') touch.hidden = mode !== 'touch';
   }
 
@@ -360,6 +453,8 @@
     menu: toMenu,
     quit: toMenu,
     continue: toBrief,
+    about() { setState('about'); },
+    back() { setState('menu'); },
     how(btn) {
       const how = $('#how');
       how.hidden = !how.hidden;
@@ -395,8 +490,9 @@
       } else if (e.type === 'back') {
         if (state === 'play') pause();
         else if (state === 'paused') resume();
-        else if (state === 'brief' || state === 'results') toMenu();
+        else if (state === 'brief' || state === 'results' || state === 'count') toMenu();
         else if (state === 'fact') toBrief();
+        else if (state === 'about') setState('menu');
       }
     }
   }
@@ -427,8 +523,10 @@
     input.update(dt);
     handle(input.take());
 
+    const idle = state === 'menu' || state === 'about';
     if (state === 'play') updatePlay(now, dt);
-    else if (state === 'menu' && !reduced) stepWorld(world, dt, 0, 0, true);
+    else if (state === 'count') updateCount(now);
+    else if (idle && !reduced) stepWorld(world, dt, 0, 0, true);
 
     let sign = null;
     if (run && (state === 'play' || state === 'paused') && run.current >= 0) {
@@ -442,8 +540,11 @@
       flash: state === 'play' && run.flash && now < run.flash.until ? run.flash : null,
       shake: (state === 'play' || state === 'paused') && !world.onRoad,
       showBox: true,
-      showCross: state !== 'menu',
-      reduced
+      showCross: !idle,
+      reduced,
+      time: now / 1000,
+      dt: state === 'play' || idle ? dt : 0,
+      exhaust: state === 'play' || state === 'count' || idle
     });
 
     requestAnimationFrame(frame);

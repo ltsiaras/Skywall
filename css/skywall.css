@@ -172,7 +172,77 @@ legend { color: #bbb; padding: 0 4px; }
 
 .noscript { position: fixed; left: 10px; bottom: 10px; }
 
+/* window title bar on every panel */
+.titlebar {
+  margin: -12px -16px 10px;
+  padding: 3px 8px;
+  font: bold 12px Verdana, Geneva, Tahoma, sans-serif;
+  color: #fff;
+  text-shadow: 1px 1px 0 #0b2a52;
+  background: #2d62a8;
+  background: linear-gradient(#5b8fd6, #2d62a8 55%, #1f4f8a);
+  border-bottom: 1px solid #0b2a52;
+}
+.titlebar::after {             /* fake window buttons, just for looks */
+  content: "_ \25A1  x";
+  float: right;
+  font-weight: normal;
+  letter-spacing: 3px;
+  opacity: 0.8;
+}
+
+a { color: #8fc8ff; }
+a:visited { color: #c5a8ff; }
+
+kbd {
+  display: inline-block;
+  min-width: 1.2em;
+  padding: 0 4px;
+  margin: 0 1px;
+  font: bold 11px Verdana, Geneva, Tahoma, sans-serif;
+  line-height: 16px;
+  text-align: center;
+  color: #000;
+  background: linear-gradient(#ffffff, #cfcfcf);
+  border: 1px solid #777;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+}
+
+/* results bars, with a tick at 80% */
+.bar {
+  position: relative;
+  display: block;
+  height: 8px;
+  margin-top: 3px;
+  background: #333;
+  border: 1px solid #666;
+}
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; background: #E8812A; }
+.bar i.ok { background: #4CAF50; }
+.bar s { position: absolute; left: 80%; top: -3px; bottom: -3px; width: 2px; background: #fff; }
+
+/* recent runs graph */
+.graph-title { margin: 10px 0 4px; color: #bbb; }
+.graph-title .key { margin-left: 10px; font-size: 11px; }
+.graph-title .sign { color: #FFD200; }
+.graph-title .drive { color: #4FC3F7; }
+.graph { display: block; width: 100%; height: auto; border: 1px solid #555; }
+
+/* 3, 2, 1, GO! */
+#count {
+  position: absolute;
+  left: 0; right: 0; top: 18%;
+  z-index: 6;
+  text-align: center;
+  font: bold 96px Verdana, Geneva, Tahoma, sans-serif;
+  color: #FFD200;
+  text-shadow: -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000, 3px 3px 0 #000, 6px 6px 0 rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+
 @media (max-width: 500px) {
   .panel, .panel.small { width: auto; max-width: none; margin: 10px; }
+  #count { font-size: 72px; }
   .cars label { width: 32%; }
 }

@@ -15,13 +15,17 @@
 <!-- in-game -->
 <div id="hud" hidden>
   <span data-run>Run 1</span> &nbsp; <span data-clock>3:00</span>
-  <button type="button" class="hud-pause" data-action="pause">Pause (P)</button>
+  <button type="button" class="hud-pause" data-action="pause">Pause [P]</button>
 </div>
+
+<!-- 3, 2, 1, GO! -->
+<div id="count" aria-live="assertive" hidden></div>
 
 <!-- MENU -->
 <div id="menu" class="screen" role="main" aria-labelledby="title">
   <h1 id="title" class="sr-only">Skywall</h1>
   <div class="panel">
+    <div class="titlebar" aria-hidden="true">Main Menu</div>
     <p class="intro">Drive the road and catch the sign, both at once.</p>
 
     <table class="target">
@@ -46,9 +50,13 @@
       <tr><th>Progress</th><td data-journey>Session 1 of 12, run 0 of 20</td></tr>
     </table>
 
+    <p class="graph-title">Your last runs <span class="key sign">&#9632; signs</span> <span class="key drive">&#9632; driving</span></p>
+    <canvas class="graph" data-graph width="436" height="110" aria-label="Graph of your recent sign and driving scores" role="img"></canvas>
+
     <p class="buttons">
       <button class="btn primary" type="button" data-action="start">Start</button>
       <button class="btn" type="button" data-action="how" aria-expanded="false" aria-controls="how">How to play</button>
+      <button class="btn" type="button" data-action="about">About NeuroRacer</button>
     </p>
 
     <div id="how" hidden>
@@ -62,13 +70,33 @@
       <p><button class="btn small" type="button" data-action="reset">Reset my levels</button></p>
     </div>
 
-    <p class="homage"><b>In homage to NeuroRacer.</b> Built from the published methods of the UCSF study that tested it (Anguera et al., <i>Nature</i> 2013). Not affiliated with UCSF or Akili.</p>
+    <p class="homage"><b>In homage to NeuroRacer</b> and the Gazzaley Lab at UCSF. Built from the published methods of the study that tested it (Anguera et al., <i>Nature</i> 2013). Not affiliated with UCSF, Neuroscape or Akili.</p>
+  </div>
+</div>
+
+<!-- ABOUT -->
+<div id="about" class="screen" hidden aria-labelledby="about-title">
+  <div class="panel">
+    <div class="titlebar" aria-hidden="true">About</div>
+    <h2 id="about-title">About NeuroRacer</h2>
+    <p>NeuroRacer was a 3-D driving game made by Adam Gazzaley's lab at UC San Francisco to test one question: can practising two things at once make an older brain better at doing two things at once?</p>
+    <p>You steered a car along a winding, hilly road with one hand and answered signs with the other. Those are the same two tasks as here.</p>
+    <table class="stats">
+      <tr><th>First test</th><td>174 people aged 20 to 79 played it. Multitasking got harder steadily with age.</td></tr>
+      <tr><th>Training</th><td>46 people aged 60 to 85 trained for 12 hours over a month: 16 on both tasks at once, 15 on one task at a time, 15 not at all.</td></tr>
+      <tr><th>Result</th><td>The two-task group multitasked better than untrained 20-year-olds. The gains held 6 months later, and spread to things the game never trained, like working memory and keeping focus.</td></tr>
+      <tr><th>Published</th><td>Anguera et al., <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC3983066/" target="_blank" rel="noopener">Video game training enhances cognitive control in older adults</a>, <i>Nature</i> 501, 97&ndash;101 (2013).</td></tr>
+      <tr><th>After</th><td>The work led to Akili Interactive, co-founded by Gazzaley. Its game EndeavorRx became, in June 2020, the first video game the US FDA authorised as a treatment, for children aged 8 to 12 with ADHD.</td></tr>
+    </table>
+    <p>NeuroRacer itself was never released. This game is a fan-made homage that rebuilds the task from the paper's published methods: the sign timings, the 54 sign levels and 200 road levels, the 80% staircase, the 12 sessions. The road, the cars and the look are its own.</p>
+    <p class="buttons"><button class="btn primary" type="button" data-action="back">Back</button></p>
   </div>
 </div>
 
 <!-- BEFORE A RUN -->
 <div id="brief" class="screen" hidden aria-labelledby="brief-title">
   <div class="panel small">
+    <div class="titlebar" aria-hidden="true">Get Ready</div>
     <h2 id="brief-title" data-run>Run 1</h2>
     <table class="target">
       <tr>
@@ -92,6 +120,7 @@
 <!-- PAUSED -->
 <div id="pause" class="screen" hidden aria-labelledby="pause-title">
   <div class="panel small">
+    <div class="titlebar" aria-hidden="true">Paused</div>
     <h2 id="pause-title">Paused</h2>
     <p>The run clock is stopped.</p>
     <p class="buttons">
@@ -105,10 +134,11 @@
 <!-- AFTER A RUN -->
 <div id="results" class="screen" hidden aria-labelledby="results-title">
   <div class="panel small">
+    <div class="titlebar" aria-hidden="true">Results</div>
     <h2 id="results-title" data-run>Run 1</h2>
     <table class="stats">
-      <tr><th>Signs correct</th><td data-sign-acc>0%</td></tr>
-      <tr><th>Time in the box</th><td data-drive-acc>0%</td></tr>
+      <tr><th>Signs correct</th><td><span data-sign-acc>0%</span><span class="bar" aria-hidden="true"><i data-sign-bar></i><s></s></span></td></tr>
+      <tr><th>Time in the box</th><td><span data-drive-acc>0%</span><span class="bar" aria-hidden="true"><i data-drive-bar></i><s></s></span></td></tr>
       <tr><th>Next sign window</th><td data-next-window></td></tr>
       <tr><th>Next road level</th><td data-next-road></td></tr>
     </table>
@@ -125,6 +155,7 @@
 <!-- EVERY 4TH RUN -->
 <div id="fact" class="screen" hidden aria-labelledby="fact-title">
   <div class="panel small">
+    <div class="titlebar" aria-hidden="true">Fun Fact</div>
     <h2>Did you know?</h2>
     <p id="fact-title" data-fact></p>
     <p class="buttons"><button class="btn primary" type="button" data-action="continue">Continue</button></p>
