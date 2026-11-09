@@ -22,7 +22,9 @@
       this.y = 0;               // running elevation
       this.grade = 0;
       this.curve = 0;
-      this.nextCloud = 3;
+      // Scenery draws from its own stream, so the road never depends on it.
+      this.propRand = SW.rng(Math.floor(rand() * 4294967296));
+      this.nextProp = 2;
     }
 
     get length() { return this.segs.length * SEG; }
@@ -51,12 +53,23 @@
       const i = this.segs.length;
       const y0 = this.y;
       this.y += grade * SEG;
-      const seg = { i, s: i * SEG, y0, y1: this.y, grade, curve, piece, cloud: null };
-      // Cumulus puffs sitting on the cloud sea beside the road.
-      if (--this.nextCloud <= 0) {
-        this.nextCloud = 5 + Math.floor(this.rand() * 9);
-        const side = this.rand() < 0.5 ? -1 : 1;
-        seg.cloud = { x: side * (11 + this.rand() * 34), w: 9 + this.rand() * 16, flip: this.rand() < 0.5 };
+      const seg = { i, s: i * SEG, y0, y1: this.y, grade, curve, piece, prop: null };
+      // Trees and bushes in the fields beside the road.
+      if (--this.nextProp <= 0) {
+        const r = this.propRand;
+        this.nextProp = 2 + Math.floor(r() * 5);
+        const side = r() < 0.5 ? -1 : 1;
+        const roll = r();
+        const kind = roll < 0.5 ? 'oak' : roll < 0.72 ? 'poplar' : 'bush';
+        const spec = SW.PROPS[kind];
+        const near = kind === 'bush' ? 6.5 : 8.5;
+        seg.prop = {
+          kind,
+          x: side * (near + r() * (kind === 'bush' ? 10 : 34)),
+          h: spec.h[0] + r() * (spec.h[1] - spec.h[0]),
+          v: Math.floor(r() * 3),
+          flip: r() < 0.5 ? 1 : 0
+        };
       }
       this.segs.push(seg);
     }

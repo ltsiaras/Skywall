@@ -51,7 +51,6 @@
   const canvas = $('#scene');
   const renderer = new SW.Renderer(canvas);
   renderer.load('plate', 'assets/images/sky/sky-cloud-sea.webp');
-  renderer.load('puff', 'assets/images/cutouts/cloud-single.png');
 
   const input = new SW.Input($('#touch'));
   let store = SW.store.load();

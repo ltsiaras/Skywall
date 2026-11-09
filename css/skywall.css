@@ -123,6 +123,7 @@ b { font-weight: 500; }
   font-size: clamp(88px, 13vw, 200px);
   line-height: 0.86;
   margin-left: -0.04em;
+  text-shadow: 0 2px 24px rgba(10, 22, 38, 0.28);
 }
 .lede {
   font-family: var(--serif);

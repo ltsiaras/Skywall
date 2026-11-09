@@ -1,7 +1,7 @@
 /* Skywall · render.js
-   A pseudo-3D road on a 2D canvas: segments projected front to back, the sky
-   plate behind, cumulus puffs beside the road, then the box, the car, the
-   fixation cross and the sign.
+   A pseudo-3D road on a 2D canvas: segments projected front to back over
+   the sky plate and the far hills, trees and bushes in the fields, then the
+   box, the car, the fixation cross and the sign.
 
    Layout follows the study: sign above the fixation cross, car below it,
    about 1.9° of visual angle apart (≈75 CSS px at laptop distance). */
@@ -9,6 +9,7 @@
   'use strict';
 
   const C = SW.COLORS;
+  const S = SW.SCENE;
   const SEG = SW.SEG;
   const R = 4;           // road half-width, metres
   const D = 7;           // camera → car, metres
@@ -17,6 +18,8 @@
   const DRAW = 210;      // segments drawn (~420 m)
   const NEAR = 0.4;
   const FOG0 = 50, FOG1 = 380;
+  const VERGE = 1.2;                 // gravel verge, as a multiple of the road's half-width
+  const LINE0 = 0.9, LINE1 = 0.96;   // painted edge line, inside the road edge
 
   SW.ROAD = { R, D, BOX };
 
@@ -82,7 +85,7 @@
       this.cv = canvas;
       this.ctx = canvas.getContext('2d', { alpha: false });
       this.plate = null;
-      this.puff = null;
+      this.sprites = SW.buildSprites();
       this.dprMax = Math.min(2, window.devicePixelRatio || 1);
       this.dpr = this.dprMax;
       const n = DRAW + 2;
@@ -124,6 +127,7 @@
       const offAt = s => (s <= w.carS ? 0 : 0.5 * carSeg.curve * (s - w.carS) * (s - w.carS));
 
       this.drawSky(w);
+      this.drawLand(w);
 
       // Project segment boundaries. The road's sideways offset is integrated
       // from the car forward, so the road under the car is always centred.
@@ -154,7 +158,7 @@
 
       // Segments, near to far. maxY is the highest screen row already covered.
       let maxY = L.H;
-      const puffs = [];
+      const props = [];
       for (let n = 0; n < DRAW; n++) {
         if (bz[n] <= NEAR) continue;
         const y1 = by[n], y2 = by[n + 1];
@@ -168,35 +172,36 @@
 
         // Fills reach 1px upward (toward the horizon), where the next, farther
         // segment paints over them; reaching down would leave seams.
-        ctx.fillStyle = band ? C.cloud : C.haze;
+        // Mown stripes in the fields, gravel verges, then the road with its
+        // two painted edge lines; bands alternate every 6 m for speed.
+        ctx.fillStyle = S.grass[band];
         ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
 
-        ctx.fillStyle = band ? C.sky : C.haze;
-        quad(ctx, x1 - w1 * 1.12, x1 - w1, y1, x2 - w2 * 1.12, x2 - w2, y2 - 0.5);
-        quad(ctx, x1 + w1, x1 + w1 * 1.12, y1, x2 + w2, x2 + w2 * 1.12, y2 - 0.5);
+        ctx.fillStyle = S.shoulder[band];
+        quad(ctx, x1 - w1 * VERGE, x1 + w1 * VERGE, y1, x2 - w2 * VERGE, x2 + w2 * VERGE, y2 - 0.5);
 
-        ctx.fillStyle = C.ink;
+        ctx.fillStyle = S.road[band];
         quad(ctx, x1 - w1, x1 + w1, y1, x2 - w2, x2 + w2, y2 - 0.5);
 
-        // A thin joint across the road every 6 m, for a sense of speed.
-        if (i % 3 === 0 && y1 - y2 > 1.5) {
-          ctx.fillStyle = C.haze;
-          ctx.fillRect(x1 - w1, y1 - Math.max(1, L.dpr * 0.75), w1 * 2, Math.max(1, L.dpr * 0.75));
+        if (w1 > 6) {
+          ctx.fillStyle = S.line;
+          quad(ctx, x1 - w1 * LINE1, x1 - w1 * LINE0, y1, x2 - w2 * LINE1, x2 - w2 * LINE0, y2 - 0.5);
+          quad(ctx, x1 + w1 * LINE0, x1 + w1 * LINE1, y1, x2 + w2 * LINE0, x2 + w2 * LINE1, y2 - 0.5);
         }
 
         const fog = fogAt(bz[n]);
         if (fog > 0.01) {
           ctx.globalAlpha = fog;
-          ctx.fillStyle = C.cloud;
+          ctx.fillStyle = S.haze;
           ctx.fillRect(0, y2 - 1, L.W, y1 - y2 + 1);
           ctx.globalAlpha = 1;
         }
         if (clipped) ctx.restore();
-        if (seg.cloud) puffs.push(n, maxY);
+        if (seg.prop) props.push(n, maxY);
         maxY = y2;
       }
 
-      this.drawPuffs(puffs, tr, base);
+      this.drawProps(props, tr, base);
       if (st.showBox) this.drawBox(st, camS, camY, offAt);
       this.drawCarAt(st, camS, camY, offAt);
       if (st.showCross) this.drawCross(st);
@@ -213,7 +218,7 @@
       const dw = img.width * s, dh = img.height * s;
       const y0 = L.horizon - img.height * anchor * s + w.bgY * L.U;
       const period = 2 * dw;
-      const x0 = -((((w.bgX * L.U) % period) + period) % period);
+      const x0 = -((((w.bgX * L.U * 0.6) % period) + period) % period);
       for (let x = x0, k = 0; x < L.W; x += dw, k++) {
         if (x + dw < 0) continue;
         if (k % 2 === 0) {
@@ -228,24 +233,27 @@
       }
     }
 
-    drawPuffs(puffs, tr, base) {
-      const img = this.puff;
-      if (!img) return;
+    drawLand(w) {
+      SW.drawHills(this.ctx, this.L, this.L.horizon + w.bgY * this.L.U, w.bgX);
+    }
+
+    // Far to near, each clipped to what nearer ground hasn't already covered.
+    drawProps(props, tr, base) {
       const ctx = this.ctx, L = this.L;
-      const ratio = img.height / img.width;
-      for (let j = puffs.length - 2; j >= 0; j -= 2) {
-        const n = puffs[j], clip = puffs[j + 1];
-        const c = tr.segs[base + n].cloud;
+      for (let j = props.length - 2; j >= 0; j -= 2) {
+        const n = props[j], clip = props[j + 1];
+        const p = tr.segs[base + n].prop;
+        const img = this.sprites[p.kind][p.v][p.flip];
         const k = this.bw[n] / R;
-        const cw = c.w * k, ch = cw * ratio;
-        const cx = this.bx[n] + c.x * k;
-        if (cx + cw / 2 < 0 || cx - cw / 2 > L.W) continue;
-        const bottom = this.by[n] + ch * 0.22;
-        const top = bottom - ch;
+        const ph = p.h * k, pw = ph * img.width / img.height;
+        const cx = this.bx[n] + p.x * k;
+        if (cx + pw / 2 < 0 || cx - pw / 2 > L.W || ph < 1.5) continue;
+        const bottom = this.by[n] + ph * 0.02;
+        const top = bottom - ph;
         if (top >= clip) continue;
-        const visH = Math.min(ch, clip - top);
-        ctx.globalAlpha = 1 - fogAt(this.bz[n]);
-        ctx.drawImage(img, 0, 0, img.width, img.height * (visH / ch), cx - cw / 2, top, cw, visH);
+        const visH = Math.min(ph, clip - top);
+        ctx.globalAlpha = 1 - 0.85 * fogAt(this.bz[n]);
+        ctx.drawImage(img, 0, 0, img.width, img.height * (visH / ph), cx - pw / 2, top, pw, visH);
       }
       ctx.globalAlpha = 1;
     }

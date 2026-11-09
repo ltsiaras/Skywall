@@ -15,7 +15,7 @@
       h: 0.5, bodyH: 0.27, cabinBottom: 0.7, cabinTop: 0.5, radius: 0.1, roofR: 0.07 },
     { id: 'wagon', name: 'Wagon', body: 'cloud', trim: 'sky', light: 'sky',
       h: 0.6, bodyH: 0.28, cabinBottom: 0.84, cabinTop: 0.78, radius: 0.05, roofR: 0.03 },
-    { id: 'bubble', name: 'Bubble', body: 'haze', trim: 'ink', light: 'cloud',
+    { id: 'bubble', name: 'Bubble', body: 'ink', trim: 'cloud', light: 'cloud', glass: 'sky', line: 'haze',
       h: 0.56, bodyH: 0.29, cabinBottom: 0.74, cabinTop: 0.38, radius: 0.16, roofR: 0.2 }
   ];
   SW.CAR = Object.fromEntries(SW.CARS.map(c => [c.id, c]));
@@ -65,7 +65,7 @@
 
     ctx.rotate(o.lean || 0);
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = C.ink;
+    ctx.strokeStyle = C[d.line || 'ink'];
     ctx.lineWidth = line;
 
     // Tyres
@@ -79,7 +79,19 @@
     const bodyTop = bodyBottom - w * d.bodyH;
     ctx.fillStyle = C[d.body];
     rrect(ctx, -w / 2, bodyTop, w, bodyBottom - bodyTop, w * d.radius);
-    ctx.fill(); ctx.stroke();
+    ctx.fill();
+    // daylight on the body: a lit shoulder, a shaded sill
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = C.cloud;
+    ctx.globalAlpha = d.body === 'cloud' ? 0.5 : 0.16;
+    ctx.fillRect(-w / 2, bodyTop, w, (bodyBottom - bodyTop) * 0.3);
+    ctx.fillStyle = C.ink;
+    ctx.globalAlpha = d.body === 'ink' ? 0.5 : 0.16;
+    ctx.fillRect(-w / 2, bodyBottom - (bodyBottom - bodyTop) * 0.28, w, h);
+    ctx.restore();
+    rrect(ctx, -w / 2, bodyTop, w, bodyBottom - bodyTop, w * d.radius);
+    ctx.stroke();
 
     // Cabin and rear window
     const cabTop = -h;
@@ -93,7 +105,7 @@
     const k = (gBottom - gTop) / (bodyTop - cabTop);
     const gbw = w * d.cabinBottom - inset * 2;
     const gtw = Math.max(w * 0.12, w * (d.cabinBottom - (d.cabinBottom - d.cabinTop) * k) - inset * 2);
-    ctx.fillStyle = C.ink;
+    ctx.fillStyle = C[d.glass || 'ink'];
     cabin(ctx, gbw, gtw, gBottom, gTop, w * d.roofR * 0.6);
     ctx.fill();
     // a single glint
@@ -128,7 +140,7 @@
     }
 
     // Plate and bumper
-    ctx.fillStyle = C.ink;
+    ctx.fillStyle = d.body === 'ink' ? C.haze : C.ink;
     rrect(ctx, -w * 0.47, bodyBottom - h * 0.075, w * 0.94, h * 0.09, h * 0.04); ctx.fill();
     ctx.fillStyle = C.cloud;
     rrect(ctx, -w * 0.12, bodyBottom - h * 0.2, w * 0.24, h * 0.1, h * 0.02); ctx.fill(); ctx.stroke();
